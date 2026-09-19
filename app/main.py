@@ -9,7 +9,7 @@ from app.space import SpaceLookup
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 
-app = FastAPI(title="Galaxy", version="0.1.0")
+app = FastAPI(title="Galaxy", version="0.5.0")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 lookup = SpaceLookup()
@@ -19,7 +19,11 @@ lookup = SpaceLookup()
 async def unhandled_exception(request: Request, exc: Exception):
     return JSONResponse(
         status_code=500,
-        content={"detail": "Galaxy search failed on the server. Please try again."},
+        content={
+            "detail": "Galaxy search failed on the server. Please try again.",
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+        },
     )
 
 
@@ -35,4 +39,17 @@ async def health():
 
 @app.get("/api/search")
 async def search(q: str = Query(min_length=2, max_length=120)):
-    return await lookup.search(q)
+    clean = " ".join(q.strip().split())
+    try:
+        return JSONResponse(content=await lookup.search(clean))
+    except Exception as exc:
+        return JSONResponse(
+            status_code=502,
+            content={
+                "query": clean,
+                "matches": [],
+                "message": "Galaxy could not complete this search right now.",
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            },
+        )
