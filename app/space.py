@@ -41,10 +41,10 @@ ALIASES = {"terra": "earth", "sol": "sun", "luna": "moon", "the moon": "moon"}
 
 class SpaceLookup:
     def __init__(self) -> None:
-        self.api_key = os.getenv("NASA_API_KEY", "DEMO_KEY")
+        self.api_key = os.getenv("NASA_API_KEY", "DEMO_KEY").strip() or "DEMO_KEY"
 
     async def _get(self, url: str, params: dict[str, Any] | None = None) -> Any:
-        async with httpx.AsyncClient(timeout=15.0, headers={"User-Agent": "Galaxy/0.4"}) as client:
+        async with httpx.AsyncClient(timeout=15.0, headers={"User-Agent": "Galaxy/0.7"}) as client:
             response = await client.get(url, params=params or {})
             response.raise_for_status()
             return response.json()
