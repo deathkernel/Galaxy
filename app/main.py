@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from fastapi import FastAPI, Query
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Query, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.space import SpaceLookup
@@ -13,6 +13,14 @@ app = FastAPI(title="Galaxy", version="0.1.0")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 lookup = SpaceLookup()
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Galaxy search failed on the server. Please try again."},
+    )
 
 
 @app.get("/")
