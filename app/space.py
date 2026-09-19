@@ -8,8 +8,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 NASA_BASE = "https://api.nasa.gov"
+NASA_IMAGES = "https://images-api.nasa.gov/search"
 JPL_SBDB = "https://ssd-api.jpl.nasa.gov/sbdb.api"
-WIKI_API = "https://en.wikipedia.org/api/rest_v1/page/summary"
+WIKI_API = "https://en.wikipedia.org/w/api.php"
+EXO_TAP = "https://exoplanetarchive.ipac.caltech.edu/TAP/sync"
 
 SOLAR_SYSTEM: dict[str, dict[str, Any]] = {
     "sun": {"type": "star", "name": "Sun", "mass": "1.989 × 10^30 kg", "radius": "696,340 km", "description": "The star at the center of the Solar System."},
@@ -31,8 +33,8 @@ class SpaceLookup:
     def __init__(self) -> None:
         self.api_key = os.getenv("NASA_API_KEY", "DEMO_KEY")
 
-    async def _get(self, url: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=12.0, headers={"User-Agent": "Galaxy/0.2"}) as client:
+    async def _get(self, url: str, params: dict[str, Any] | None = None) -> Any:
+        async with httpx.AsyncClient(timeout=15.0, headers={"User-Agent": "Galaxy/0.3"}) as client:
             response = await client.get(url, params=params or {})
             response.raise_for_status()
             return response.json()
@@ -43,15 +45,23 @@ class SpaceLookup:
 
     async def wikipedia(self, query: str) -> dict[str, Any] | None:
         try:
-            data = await self._get(f"{WIKI_API}/{query.replace(' ', '_')}")
+            data = await self._get(WIKI_API, {"action": "query", "list": "search", "srsearch": query, "srlimit": 5, "format": "json", "origin": "*"})
         except (httpx.HTTPError, ValueError):
             return None
-        if data.get("type", "").endswith("/not_found"):
+        hits = (data.get("query") or {}).get("search") or []
+        if not hits:
             return None
+        hit = hits[0]
+        try:
+            summary = await self._get(f"https://en.wikipedia.org/api/rest_v1/page/summary/{hit['title'].replace(' ', '_')}")
+        except (httpx.HTTPError, ValueError, KeyError):
+            summary = {}
         return {
-            "title": data.get("title"), "description": data.get("description"),
-            "extract": data.get("extract"), "thumbnail": (data.get("thumbnail") or {}).get("source"),
-            "url": (data.get("content_urls") or {}).get("desktop", {}).get("page"),
+            "title": hit.get("title"),
+            "description": summary.get("description") or hit.get("snippet", "").replace("<span class=\"searchmatch\">", "").replace("</span>", ""),
+            "extract": summary.get("extract"),
+            "thumbnail": (summary.get("thumbnail") or {}).get("source"),
+            "url": (summary.get("content_urls") or {}).get("desktop", {}).get("page"),
             "source": "Wikipedia REST API",
         }
 
@@ -82,26 +92,56 @@ class SpaceLookup:
                 return {k: item.get(k) for k in ("title", "date", "media_type", "url", "hdurl", "explanation")}
         return None
 
+    async def nasa_images(self, query: str) -> dict[str, Any] | None:
+        try:
+            data = await self._get(NASA_IMAGES, {"q": query, "media_type": "image", "page_size": 8})
+        except (httpx.HTTPError, ValueError):
+            return None
+        items = (data.get("collection") or {}).get("items") or []
+        images = []
+        for item in items[:6]:
+            links = item.get("links") or []
+            thumb = next((x.get("href") for x in links if x.get("rel") == "preview"), None)
+            fields = item.get("data", [{}])[0]
+            if thumb:
+                images.append({"title": fields.get("title"), "date": fields.get("date_created"), "thumbnail": thumb, "nasa_id": fields.get("nasa_id")})
+        return {"query": query, "images": images, "source": "NASA Image and Video Library"} if images else None
+
+    async def exoplanet(self, query: str) -> dict[str, Any] | None:
+        escaped = query.replace("'", "''")
+        adql = "SELECT TOP 1 pl_name,hostname,pl_rade,pl_bmasse,pl_orbper,pl_orbsmax,sy_dist,discoverymethod FROM pscomppars WHERE lower(pl_name)=lower('" + escaped + "')"
+        try:
+            data = await self._get(EXO_TAP, {"query": adql, "format": "json"})
+        except (httpx.HTTPError, ValueError):
+            return None
+        rows = data.get("data") or []
+        if not rows:
+            return None
+        cols = data.get("metadata") or []
+        names = [c.get("name") for c in cols]
+        row = dict(zip(names, rows[0]))
+        return {"name": row.get("pl_name"), "host_star": row.get("hostname"), "radius_earth": row.get("pl_rade"), "mass_earth": row.get("pl_bmasse"), "orbital_period_days": row.get("pl_orbper"), "semi_major_axis_au": row.get("pl_orbsmax"), "distance_pc": row.get("sy_dist"), "discovery_method": row.get("discoverymethod"), "source": "NASA Exoplanet Archive"}
+
     async def search(self, query: str) -> dict[str, Any]:
         clean = " ".join(query.strip().split())
         if not clean:
-            return {"query": query, "matches": [], "message": "Enter a space object name."}
+            return {"query": query, "matches": [], "message": "Enter anything space-related to search."}
 
-        solar, jpl, wiki, apod = await asyncio.gather(
-            self.solar_system(clean), self.jpl_small_body(clean),
-            self.wikipedia(clean), self.apod(clean),
+        solar, jpl, wiki, apod, images, exoplanet = await asyncio.gather(
+            self.solar_system(clean), self.jpl_small_body(clean), self.wikipedia(clean),
+            self.apod(clean), self.nasa_images(clean), self.exoplanet(clean),
         )
         matches: list[dict[str, Any]] = []
         if solar:
             matches.append({"type": solar["type"], "name": solar["name"], "details": solar})
+        if exoplanet and not solar:
+            matches.append({"type": "exoplanet", "name": exoplanet["name"], "details": exoplanet})
         if jpl and not solar:
             matches.append({"type": "small body", "name": jpl["name"], "details": jpl})
         if wiki:
-            matches.append({"type": "reference", "name": wiki.get("title") or clean, "details": wiki})
+            matches.append({"type": "space reference", "name": wiki.get("title") or clean, "details": wiki})
         if apod:
             matches.append({"type": "astronomy picture", "name": apod.get("title"), "details": apod})
-        return {
-            "query": clean, "matches": matches,
-            "sources": ["NASA APOD", "JPL Small-Body Database", "Wikipedia REST API", "Galaxy Solar System catalog"],
-            "message": None if matches else "No match found in the current public sources.",
-        }
+        if images:
+            matches.append({"type": "NASA image results", "name": f"NASA images for {clean}", "details": images})
+        return {"query": clean, "matches": matches, "sources": ["NASA APIs", "NASA Image and Video Library", "NASA Exoplanet Archive", "JPL Small-Body Database", "Wikipedia REST API"], "message": None if matches else "No match found in the current public sources."}
