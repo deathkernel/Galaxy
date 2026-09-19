@@ -1,4 +1,6 @@
+import math
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
@@ -9,10 +11,21 @@ from app.space import DWARF_PLANET_QUERIES, DWARF_PLANETS, SpaceLookup
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 
-app = FastAPI(title="Galaxy", version="0.6.0")
+app = FastAPI(title="Galaxy", version="0.7.0")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 lookup = SpaceLookup()
+
+
+def json_safe(value: Any) -> Any:
+    """Convert API values into strict JSON-safe values."""
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {str(key): json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe(item) for item in value]
+    return value
 
 
 @app.exception_handler(Exception)
@@ -34,7 +47,7 @@ async def home():
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "service": "galaxy", "version": "0.6.0"}
+    return {"status": "ok", "service": "galaxy", "version": "0.7.0"}
 
 
 @app.get("/api/search")
@@ -45,16 +58,16 @@ async def search(q: str = Query(min_length=2, max_length=120)):
             {"type": item["type"], "name": item["name"], "details": item}
             for item in DWARF_PLANETS.values()
         ]
-        return {
+        return json_safe({
             "query": clean,
             "matches": matches,
             "sources": ["NASA Dwarf Planets"],
             "message": None,
-        }
+        })
 
     try:
         result = await lookup.search(clean)
-        return JSONResponse(content=result)
+        return JSONResponse(content=json_safe(result))
     except Exception as exc:
         return JSONResponse(
             status_code=502,
