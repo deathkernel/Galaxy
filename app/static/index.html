@@ -3,30 +3,34 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Galaxy — Space Object Explorer</title>
+  <title>Galaxy — Space Intelligence</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <main class="shell">
     <header class="hero">
-      <p class="eyebrow">SPACE OBJECT EXPLORER</p>
+      <p class="eyebrow">SPACE INTELLIGENCE • V2</p>
       <h1>🌌 Galaxy</h1>
-      <p class="subtitle">Type the name of a space object and pull together public astronomy data.</p>
+      <p class="subtitle">Search a planet, star, moon, asteroid, comet, galaxy or spacecraft and pull together information from public space data sources.</p>
     </header>
 
     <section class="search-card">
       <form id="search-form">
-        <input id="query" name="q" autocomplete="off"
-               placeholder="Try: Apophis, Bennu, Mars..." minlength="2" required>
-        <button type="submit">Explore</button>
+        <input id="query" name="q" autocomplete="off" placeholder="Try: Mars, Bennu, Apophis, Andromeda..." minlength="2" required>
+        <button type="submit">Explore →</button>
       </form>
-      <p class="hint">Powered by public NASA and JPL endpoints.</p>
+      <div class="examples">
+        <button type="button" data-query="Mars">Mars</button>
+        <button type="button" data-query="Bennu">Bennu</button>
+        <button type="button" data-query="Andromeda">Andromeda</button>
+        <button type="button" data-query="Sagittarius A*">Sagittarius A*</button>
+      </div>
+      <p class="hint">Public NASA + JPL + Wikipedia sources • API keys stay server-side</p>
     </section>
 
     <section id="status" class="status"></section>
     <section id="results" class="results"></section>
   </main>
-
   <script src="/static/app.js"></script>
 </body>
 </html>
