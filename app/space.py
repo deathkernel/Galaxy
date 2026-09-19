@@ -26,6 +26,16 @@ SOLAR_SYSTEM: dict[str, dict[str, Any]] = {
     "pluto": {"type": "dwarf planet", "name": "Pluto", "distance_from_sun": "5.91 billion km average", "radius": "1,188.3 km", "moons": 5, "description": "A dwarf planet in the Kuiper Belt."},
     "moon": {"type": "natural satellite", "name": "Moon", "distance_from_earth": "384,400 km average", "radius": "1,737.4 km", "description": "Earth's natural satellite."},
 }
+
+DWARF_PLANETS: dict[str, dict[str, Any]] = {
+    "ceres": {"type": "dwarf planet", "name": "Ceres", "description": "The only officially recognized dwarf planet in the inner Solar System, located in the asteroid belt.", "location": "Asteroid Belt", "radius": "476 km", "source": "NASA Dwarf Planets"},
+    "pluto": {"type": "dwarf planet", "name": "Pluto", "description": "A dwarf planet in the Kuiper Belt beyond Neptune.", "location": "Kuiper Belt", "radius": "1,188.3 km", "moons": 5, "source": "NASA Dwarf Planets"},
+    "haumea": {"type": "dwarf planet", "name": "Haumea", "description": "A rapidly rotating dwarf planet in the Kuiper Belt with an elongated shape.", "location": "Kuiper Belt", "radius": "~870 km", "source": "NASA Dwarf Planets"},
+    "makemake": {"type": "dwarf planet", "name": "Makemake", "description": "A dwarf planet in the Kuiper Belt and one of its brightest known objects.", "location": "Kuiper Belt", "radius": "~717 km", "source": "NASA Dwarf Planets"},
+    "eris": {"type": "dwarf planet", "name": "Eris", "description": "A distant dwarf planet in the outer Solar System that helped prompt the 2006 planet-definition debate.", "location": "Outer Solar System", "radius": "~1,163 km", "moons": 1, "source": "NASA Dwarf Planets"},
+}
+
+DWARF_PLANET_QUERIES = {"dwarf planet", "dwarf planets", "dwarf planet list", "dwarf planets list", "dwarf worlds", "dwarf world"}
 ALIASES = {"terra": "earth", "sol": "sun", "luna": "moon", "the moon": "moon"}
 
 
@@ -34,7 +44,7 @@ class SpaceLookup:
         self.api_key = os.getenv("NASA_API_KEY", "DEMO_KEY")
 
     async def _get(self, url: str, params: dict[str, Any] | None = None) -> Any:
-        async with httpx.AsyncClient(timeout=15.0, headers={"User-Agent": "Galaxy/0.3"}) as client:
+        async with httpx.AsyncClient(timeout=15.0, headers={"User-Agent": "Galaxy/0.4"}) as client:
             response = await client.get(url, params=params or {})
             response.raise_for_status()
             return response.json()
@@ -42,6 +52,13 @@ class SpaceLookup:
     async def solar_system(self, query: str) -> dict[str, Any] | None:
         item = SOLAR_SYSTEM.get(ALIASES.get(query.casefold(), query.casefold()))
         return {**item, "source": "Galaxy Solar System catalog"} if item else None
+
+    async def dwarf_planets(self, query: str) -> dict[str, Any] | None:
+        key = query.casefold()
+        if key in DWARF_PLANET_QUERIES:
+            return {"type": "dwarf planet catalog", "name": "Officially recognized dwarf planets", "description": "NASA currently lists five officially recognized dwarf planets in our Solar System.", "items": list(DWARF_PLANETS.values()), "source": "NASA Dwarf Planets"}
+        item = DWARF_PLANETS.get(key)
+        return {**item} if item else None
 
     async def wikipedia(self, query: str) -> dict[str, Any] | None:
         try:
@@ -126,6 +143,12 @@ class SpaceLookup:
         clean = " ".join(query.strip().split())
         if not clean:
             return {"query": query, "matches": [], "message": "Enter anything space-related to search."}
+
+        dwarf = await self.dwarf_planets(clean)
+        if dwarf:
+            if dwarf.get("items"):
+                matches = [{"type": item["type"], "name": item["name"], "details": item} for item in dwarf["items"]]
+                return {"query": clean, "matches": matches, "sources": ["NASA Dwarf Planets"], "message": None}
 
         solar, jpl, wiki, apod, images, exoplanet = await asyncio.gather(
             self.solar_system(clean), self.jpl_small_body(clean), self.wikipedia(clean),
