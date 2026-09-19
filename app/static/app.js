@@ -12,7 +12,7 @@ function renderImages(images) {
 }
 function render(data) {
   if (!data.matches?.length) {
-    results.innerHTML = `<div class="empty"><h2>Nothing found</h2><p>${esc(data.message)}</p><p>Try an object, mission, spacecraft, astronomy term, or discovery.</p></div>`;
+    results.innerHTML = `<div class="empty"><h2>Nothing found</h2><p>${esc(data.message || "No results found.")}</p><p>Try an object, mission, spacecraft, astronomy term, or discovery.</p></div>`;
     return;
   }
   results.innerHTML = data.matches.map(match => {
@@ -29,8 +29,14 @@ async function search(q) {
   queryInput.value = q; status.textContent = "Scanning public space databases…"; results.innerHTML = "";
   try {
     const response = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || "Search failed");
+    const raw = await response.text();
+    let data;
+    try {
+      data = raw ? JSON.parse(raw) : {};
+    } catch {
+      throw new Error(response.ok ? "The server returned an invalid response." : `Server error (${response.status}).`);
+    }
+    if (!response.ok) throw new Error(data.detail || data.message || `Search failed (${response.status}).`);
     status.textContent = data.matches?.length ? `${data.matches.length} source result${data.matches.length === 1 ? "" : "s"} found.` : "";
     render(data);
   } catch (error) {
